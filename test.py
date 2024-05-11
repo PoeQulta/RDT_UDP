@@ -1,4 +1,5 @@
 from RDT_Sock import RDT_Socket
+from http_Socket import HTTPRequestHandler,HTTPClient
 # Server Code
 def server():
     server_socket = RDT_Socket()
@@ -24,3 +25,20 @@ def client():
     print("Received acknowledgment:", data.decode())
     conn.close()
     client_socket.close()
+
+
+def HTTPServerTest():
+    server = HTTPRequestHandler()
+    server.start()
+def HTTPClientTest():
+    client = HTTPClient()
+    client.connect()
+    # Send a GET request
+    response = client.send_request('GET', '/')
+    # Print the response
+    print(response) 
+    # Send a POST request
+    response = client.send_request('POST', '/')
+    # Print the response
+    print(response)
+    client.close()

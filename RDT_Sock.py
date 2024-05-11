@@ -19,15 +19,19 @@ class RDT_Socket(socket.socket):
             size = struct.calcsize(Packet.packet_format)
             packet = Packet(self.seq_num, self.ack_num, data, self.window_size)
             self.sock.sendto(packet.get_packed(),(self.remote_IP,self.remote_port))
-            ackData, addr = self.sock.recvfrom(2048)
-            ackPacket = Packet.from_struct(ackData)
-            if(addr[0]==self.remote_IP and addr[1]==self.remote_port):
-                if(ackPacket.flags.ACK):
-                    if(ackPacket.ack_num == packet.seq_num+size):
-                        print("Recieved ACK")
-                        self.seq_num = ackPacket.ack_num
-                        self.ack_num = ackPacket.seq_num+1
-                        return True
+            try:
+                ackData, addr = self.sock.recvfrom(2048)
+                ackPacket = Packet.from_struct(ackData)
+                if(addr[0]==self.remote_IP and addr[1]==self.remote_port):
+                    if(ackPacket.flags.ACK):
+                        if(ackPacket.ack_num == packet.seq_num+size):
+                            print("Recieved ACK")
+                            self.seq_num = ackPacket.ack_num
+                            self.ack_num = ackPacket.seq_num+1
+                            return True
+            except TimeoutError:
+                print("Resending Data")
+                self.send(data)
             raise Exception("send Failure")
         def acknowledge(self,packet:Packet):
             size = struct.calcsize(Packet.packet_format)
@@ -40,18 +44,29 @@ class RDT_Socket(socket.socket):
             data, addr = self.sock.recvfrom(2048)
             if(addr[0]==self.remote_IP and addr[1]==self.remote_port):
                 packet = Packet.from_struct(data)
+                if packet.flags.FIN:
+                    Fin_ack_packet = Packet(self.seq_num, self.ack_num, b'', self.window_size, ACK=True,FIN=True)
+                    self.sock.sendto(Fin_ack_packet.get_packed(), (self.remote_IP,self.remote_port))
+                    raise ConnectionAbortedError
                 if packet.checksum == packet.crc_32_func(packet.data):
                     self.acknowledge(packet)
                     return packet.data.strip(b'\0')
                 else:
                     raise Exception("Checksum error")
         def close(self):
-            self.sock.close()
+            Fin_packet = Packet(self.seq_num, self.ack_num, b'', self.window_size,FIN=True)
+            self.sock.sendto(Fin_packet.get_packed(), (self.remote_IP,self.remote_port))
+            try:
+                resp = self.receive()
+                return False
+            except ConnectionAbortedError:
+                self.sock.close()
+                return True
 
 
-    def __init__(self) -> None:
+    def __init__(self,timeout=None) -> None:
         super().__init__(socket.AF_INET, socket.SOCK_DGRAM)
-
+        super().settimeout(timeout)
     def listen(self, backlog):
         self.backlog = backlog
         self.connections = []
